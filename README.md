@@ -1,202 +1,341 @@
-# OCR Player Search - Add Ban
+# OCR BF Players
 
-Sistema para buscar jogador do Battlefield V usando imagem, print ou nome manual dentro da aba **Add Ban** do painel ADM.
+API simples em Python + FastAPI + Tesseract para ler prints pequenos de jogadores do Battlefield.
 
-## Objetivo
+Ela foi feita para imagens no estilo:
 
-Permitir que o ADM possa:
-
-- Digitar o nome do jogador manualmente
-- Colar uma print com `Ctrl + V`
-- Arrastar uma imagem para o campo
-- Selecionar uma imagem do computador
-- Identificar automaticamente:
-  - Level
-  - Clan tag
-  - Nome do jogador
-  - EA ID / Persona ID
-  - Avatar
-  - Plataforma
-
-## Endpoint usado
-
-```bash
-POST /api/bfv/ocr/player-search
-```
-
-URL pública:
-
-```bash
-https://manager.choriper.com/api/bfv/ocr/player-search
-```
-
-## Exemplo com cURL
-
-### Windows CMD
-
-```cmd
-curl -X POST "https://manager.choriper.com/api/bfv/ocr/player-search" -H "accept: application/json" -F "file=@adm-rip.png;type=image/png"
-```
-
-### PowerShell
-
-```powershell
-curl.exe -X POST "https://manager.choriper.com/api/bfv/ocr/player-search" -H "accept: application/json" -F "file=@adm-rip.png;type=image/png"
-```
-
-## Exemplo de imagem lida
-
-Imagem:
-
-```txt
+```text
 64 [RIP]ADM-RIP
+73 [STF]Peacock-atomic
+76 uMarcosPC
 ```
 
-Resultado esperado:
+A API retorna o level e o nome lido pelo OCR.
+
+---
+
+## Estrutura esperada
+
+```text
+ocr-bf-players/
+  Dockerfile
+  docker-compose.yml
+  requirements.txt
+  api.py
+  main.py
+  app/
+    __init__.py
+    ocr_reader.py
+```
+
+---
+
+## Docker Compose
+
+Exemplo usando porta `8020`:
+
+```yaml
+ocr-bf-players:
+  build:
+    context: ./ocr-bf-players
+    dockerfile: Dockerfile
+  container_name: ocr-bf-players
+  restart: unless-stopped
+  expose:
+    - "8020"
+  ports:
+    - "127.0.0.1:8020:8020"
+  environment:
+    TZ: America/Sao_Paulo
+    HOST: 0.0.0.0
+    PORT: 8020
+    PYTHONUNBUFFERED: "1"
+  command: uvicorn api:app --host 0.0.0.0 --port 8020
+  networks: [edge]
+```
+
+URL interna para outros containers:
+
+```env
+CHORIPER_OCR_BF=http://ocr-bf-players:8020
+```
+
+URL local no host/VPS:
+
+```text
+http://127.0.0.1:8020
+```
+
+---
+
+## Subir o container
+
+```bash
+docker compose up -d --build ocr-bf-players
+```
+
+Ver logs:
+
+```bash
+docker logs -f ocr-bf-players
+```
+
+Testar se a API está online:
+
+```bash
+curl http://127.0.0.1:8020/
+```
+
+Resposta esperada:
 
 ```json
 {
   "ok": true,
-  "ocr_name": "[RIP]ADM-RIP",
-  "clan_tag": "RIP",
-  "player_name": "ADM-RIP",
-  "level": 64,
-  "player_found": true,
-  "player": {
-    "name": "ADM-RIP",
-    "eaid": "ADM-RIP",
-    "nickname": "ripbfadmin",
-    "clan_tag": "RIP",
-    "ocr_full_name": "[RIP]ADM-RIP",
-    "search_name": "ADM-RIP",
-    "ea_id": "1007367211454",
-    "player_id": "1007367211454",
-    "persona_id": "1007367211454",
-    "platform": "pc",
-    "status": "ACTIVE"
+  "message": "OCR BFV Players API online",
+  "endpoint": "POST /ocr"
+}
+```
+
+---
+
+## Endpoint OCR
+
+### `POST /ocr`
+
+Recebe uma imagem via `multipart/form-data`.
+
+Exemplo no Linux:
+
+```bash
+curl -X POST "http://127.0.0.1:8020/ocr" \
+  -H "accept: application/json" \
+  -F "file=@image.png;type=image/png"
+```
+
+Exemplo no Windows CMD:
+
+```cmd
+curl -X POST "http://127.0.0.1:8020/ocr" -H "accept: application/json" -F "file=@image.png;type=image/png"
+```
+
+---
+
+## Exemplo: ADM-RIP
+
+Imagem:
+
+```text
+64 [RIP]ADM-RIP
+```
+
+Resposta esperada:
+
+```json
+{
+  "ok": true,
+  "filename": "image.png",
+  "result": {
+    "raw_text": "64 [RIP]ADM-RIP",
+    "cleaned_text": "64 [RIP]ADM-RIP",
+    "level": 64,
+    "name": "[RIP]ADM-RIP"
   }
 }
 ```
 
-## Regra de exibição no painel
+Se sua API também separar clã no backend que consome o OCR, você pode converter:
 
-No card de **Player selecionado**, o nome principal deve ser sempre o nome do Battlefield:
-
-```txt
-ADM-RIP
+```json
+{
+  "level": 64,
+  "ocr_name": "[RIP]ADM-RIP",
+  "clan_tag": "RIP",
+  "player_name": "ADM-RIP"
+}
 ```
 
-O nickname da conta deve aparecer abaixo:
+---
 
-```txt
-ripbfadmin
+## Exemplo: Peacock
+
+Imagem:
+
+```text
+73 [STF]Peacock-atomic
 ```
 
-Exemplo visual:
+Resposta esperada:
 
-```txt
-Player selecionado
-
-ADM-RIP
-ripbfadmin
-personaId: 1007367211454
-```
-
-## Campos usados no Add Ban
-
-Quando o OCR encontra o jogador, o painel preenche automaticamente:
-
-| Campo | Valor |
-|---|---|
-| EA ID | `player.ea_id` |
-| Persona ID | `player.persona_id` |
-| Nome | `player.eaid` ou `player.name` |
-| Nickname | `player.nickname` |
-| Plataforma | `player.platform` |
-| Avatar | `player.avatar` |
-
-## Fluxo no frontend
-
-1. ADM abre a aba **Bans**
-2. Clica em **Add Ban**
-3. Em **Pesquisar jogador**, ele pode:
-   - Digitar o nome
-   - Colar imagem
-   - Arrastar imagem
-   - Selecionar imagem
-4. O frontend envia a imagem para:
-
-```txt
-/api/bfv/ocr/player-search
-```
-
-5. A API retorna o jogador encontrado
-6. O painel preenche automaticamente o campo **EA ID**
-7. ADM escolhe motivo, visibilidade e tipo de ban
-8. Clica em **Add Ban**
-
-## Observação importante
-
-Para envio de imagem, não usar `Content-Type: application/json`.
-
-O envio precisa ser feito com `FormData`:
-
-```ts
-const formData = new FormData();
-formData.append('file', file);
-
-await fetch('/api/bfv/ocr/player-search', {
-  method: 'POST',
-  credentials: 'include',
-  body: formData,
-  headers: {
-    accept: 'application/json'
+```json
+{
+  "ok": true,
+  "filename": "Captura de tela 2026-05-02 150337.png",
+  "result": {
+    "raw_text": "73 [STF]Peacock-atomic",
+    "cleaned_text": "73 [STF]Peacock-atomic",
+    "level": 73,
+    "name": "[STF]Peacock-atomic"
   }
-});
+}
 ```
 
-O navegador define automaticamente o `Content-Type` correto:
+---
 
-```txt
-multipart/form-data
+## Exemplo: sem clã
+
+Imagem:
+
+```text
+76 uMarcosPC
 ```
 
-## Exemplo de mapeamento correto
+Resposta esperada:
 
-```ts
-const battlefieldName =
-  player.eaid ||
-  player.name ||
-  player.search_name ||
-  data.player_name ||
-  foundEaId;
-
-const mappedPlayer = {
-  EAID: battlefieldName,
-  userId: player.ea_pd || player.nucleus_id || player.pd || foundEaId,
-  id: foundEaId,
-  avatarUrl: player.avatar || undefined,
-  nickname:
-    player.nickname && player.nickname !== battlefieldName
-      ? player.nickname
-      : undefined,
-  platform: player.platform || 'pc',
-  status: player.status || undefined,
-};
+```json
+{
+  "ok": true,
+  "filename": "player.png",
+  "result": {
+    "raw_text": "76 uMarcosPC",
+    "cleaned_text": "76 uMarcosPC",
+    "level": 76,
+    "name": "uMarcosPC"
+  }
+}
 ```
 
-## Resultado
+---
 
-Com isso, a busca por imagem no **Add Ban** funciona para prints como:
+## Como chamar de outro serviço Python
 
-```txt
-64 [RIP]ADM-RIP
+Exemplo usando `requests`:
+
+```python
+import os
+import requests
+
+OCR_BASE_URL = os.getenv("CHORIPER_OCR_BF", "http://ocr-bf-players:8020")
+
+def ocr_player_image(image_path: str):
+    with open(image_path, "rb") as f:
+        response = requests.post(
+            f"{OCR_BASE_URL}/ocr",
+            files={"file": ("image.png", f, "image/png")},
+            timeout=30,
+        )
+
+    response.raise_for_status()
+    return response.json()
+
+
+result = ocr_player_image("image.png")
+print(result)
 ```
 
-E o painel seleciona corretamente:
+---
 
-```txt
-Nome Battlefield: ADM-RIP
-Nickname: ripbfadmin
-Persona ID: 1007367211454
+## Como chamar com `httpx` assíncrono
+
+```python
+import os
+import httpx
+
+OCR_BASE_URL = os.getenv("CHORIPER_OCR_BF", "http://ocr-bf-players:8020")
+
+async def ocr_player_image(image_bytes: bytes, filename: str = "image.png"):
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(
+            f"{OCR_BASE_URL}/ocr",
+            files={"file": (filename, image_bytes, "image/png")},
+        )
+
+    response.raise_for_status()
+    return response.json()
 ```
+
+---
+
+## Separar clã e nome
+
+Se o OCR retornar:
+
+```json
+{
+  "name": "[RIP]ADM-RIP"
+}
+```
+
+Use esta função:
+
+```python
+import re
+
+def split_clan_name(ocr_name: str):
+    if not ocr_name:
+        return None, None
+
+    match = re.match(r"^\[([^\]]+)\](.+)$", ocr_name)
+
+    if match:
+        clan_tag = match.group(1).strip()
+        player_name = match.group(2).strip()
+        return clan_tag, player_name
+
+    return None, ocr_name.strip()
+
+
+clan_tag, player_name = split_clan_name("[RIP]ADM-RIP")
+
+print(clan_tag)     # RIP
+print(player_name)  # ADM-RIP
+```
+
+---
+
+## Debug
+
+Durante testes, você pode deixar no `api.py`:
+
+```python
+save_debug=True
+```
+
+Isso cria imagens na pasta:
+
+```text
+debug_ocr/
+```
+
+Quando terminar os testes, deixe:
+
+```python
+save_debug=False
+```
+
+para não ficar salvando imagem a cada requisição.
+
+---
+
+## Limpeza Docker
+
+Se o Docker encher o disco:
+
+```bash
+docker builder prune -f
+docker system prune -a -f
+```
+
+Ver quanto está usando:
+
+```bash
+docker system df
+```
+
+---
+
+## Observações
+
+- A porta interna usada neste exemplo é `8020`.
+- Outros containers devem chamar `http://ocr-bf-players:8020`.
+- O host/VPS pode testar por `http://127.0.0.1:8020`.
+- Para produção, não exponha publicamente sem autenticação.
