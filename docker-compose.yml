@@ -1,0 +1,10 @@
+services:
+  ocr-bfv:
+    build: .
+    container_name: ocr-bfv
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./imagens:/app/imagens
+      - ./saida:/app/saida
+    restart: unless-stopped
